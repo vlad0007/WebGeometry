@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<title>Pyramid</title>
+	<script type="text/javascript" src="three.min.js"></script>
+	<script src = "OrbitControls.js"></script>
+	<script src = "WebGeometry.js"></script>
+	<script src = "pyramid_index.js"></script>
+	<script src = "pyramid_colors.js"></script>
+	<script src = "pyramid_verts.js"></script>
+	<script src = "polyhedron.js"></script>
+    <style>
+        body {
+            /* set margin to 0 and overflow to hidden, to go fullscreen */
+            margin: 0;
+            overflow: hidden;
+        }
+    </style>
+	
+	<style>
+		body 
+		{
+			/* set margin to 0 and overflow to hidden, to go fullscreen */
+			margin: 0;
+			overflow: hidden;
+		}
+
+		.b1 
+		{
+			background: rgb(200, 100, 200); 
+			color: black; 
+			font-size: 12pt;
+			font-weight: bold;
+		}
+
+		img 
+		{
+			border-radius: 4%;
+		}		
+	</style>
+</head>
+
+<body>
+
+<script type="text/javascript">
+
+////////////////////////////////////////////////////////
+// Инициализация параметров модели
+var DEGREE = 0.01745329251994;
+var lw = 1.2;              // отношение длина/ширина
+var r = 0.06;              // высота рундиста
+var angleA = 50*DEGREE;    // угол короны
+var angleB = 60*DEGREE;    // угол короны
+var hCrown = 0.3;	       // высота короны
+var anglePav = 60*DEGREE;  // угол павильона
+////////////////////////////////////////////////////
+
+var ctx;           // контекст для рисования на холсте (на canvas)
+var vertices = []; // в этот массив записывется результат работы функции VerticesCalculation()
+var girdle = [];   // массив для хранения координат вешин рундиста пирамиды
+
+var scene, renderer;
+
+// Две камеры - перспективная и ортогональная
+// Два OrbitControls для этих камер
+var camera_persp;
+var camera_ortho;
+var orbitControls_persp;
+var orbitControls_ortho;
+var clock;
+
+var material_line;  // THREE.LineBasicMaterial
+var all_lines = []; // массив для хранения ребер полигонов
+var all_plgs = [];  // массив для хранения полигонов
+var points = [];    // массив для хранения вершин всех полигонов в виде THREE.Vector3
+var colors = [];    // массив в котором хранятся цвета граней
+
+var camera_persp;
+var camera_ortho;
+var orbitControls_persp;
+var orbitControls_ortho;
+var clock;
+
+// Масштабный множитель для полигонов при их отображении
+var kf = 7.0;
+// Масштабный множитель для ребер при их отображении
+var kf_lines = 7.03;
+
+// кнопки
+var btn_lw_minus, btn_lw_plus;
+var btn_r_minus, btn_r_plus;
+var btn_angleA_minus, btn_angleA_plus;
+var btn_angleB_minus, btn_angleB_plus;
+var btn_hCrown_minus, btn_hCrown_plus;
+var btn_anglePav_minus, btn_anglePav_plus;
+var btn_numbering;
+var btn_camera;
+
+// картинки
+var crown_image;
+var pavilion_image;
+var pyramid_image;
+
+function draw()
+{	
+	// Создаем 2D холст на который будем выводить 
+	// вспомогательную информацию (например значения параметров).
+	var width = window.innerWidth;
+	var height = window.innerHeight;
+	var hud = document.createElement("canvas");
+	
+	document.body.appendChild(hud);
+	hud.width = width;
+	hud.height = height;
+	hud.style = "position: absolute; z-index: 0;"
+	ctx = hud.getContext('2d');
+	if (!ctx) 
+	{
+		console.log('Failed to get rendering context');
+		return;
+	}	
+	
+	// Создаем трехмерную сцену, перспективную камеру и рендерер
+	scene = new THREE.Scene();
+	
+	// Создаем перспективную камеру.
+	camera_persp = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+	camera_persp.position.x = 5;
+	camera_persp.position.y = 10;
+	camera_persp.position.z = -20;
+	camera_persp.lookAt(new THREE.Vector3(0, 0, 0));	
+	
+	// Создаем ортогональную камеру.
+	var aspect = window.innerWidth / window.innerHeight;
+	var frustumSize = 20;
+	camera_ortho = new THREE.OrthographicCamera( frustumSize * aspect / - 2, frustumSize * aspect / 2, frustumSize / 2, frustumSize / - 2, 1, 2000 );
+	camera_ortho.position.x = 5;
+	camera_ortho.position.y = 10;
+	camera_ortho.position.z = -20;
+	camera_ortho.lookAt(new THREE.Vector3(0, 0, 0));
+	
+	renderer = new THREE.WebGLRenderer();
+	document.body.appendChild(renderer.domElement);
+	renderer.setClearColor(new THREE.Color(0xEEEEEE, 1.0));
+	renderer.setSize(window.innerWidth, window.innerHeight);
+	
+	// OrbitControls позволяет осуществлять осмотр 3D модели со всех сторон при помощи мыши. 
+	// Создаем два OrbitControls для двух камер.
+	orbitControls_persp = new THREE.OrbitControls(camera_persp);
+	orbitControls_ortho = new THREE.OrbitControls(camera_ortho);
+	clock = new THREE.Clock();
+	
+	// Создаем переключатель "перспективная камера" / "ортогональная камера"
+	btn_camera = new Btn( "btn_camera", "checkbox", "205px", "255px");
+	btn_camera.name.checked = true;
+	btn_camera.name.addEventListener("click", camera_change);	
+	
+	// Создаем кнопки при помощи которых будем изменять параметры 3D модели.
+	Add_Param_Buttons();
+	
+	// Создаем кнопку при нажатии на которую будет запускаться программа отображения
+	// пирамиды на которой будут присутствовать индексы вершин модели.
+	btn_numbering = new Btn("Model vertices", "button", "70px", "290px" );
+	btn_numbering.id.style.width = "150px";
+	btn_numbering.id.style.height = "30px";
+	btn_numbering.id.style.background= '#e0ffe0';
+	btn_numbering.id.style.borderRadius = "10px";
+	btn_numbering.id.style.cursor = "pointer";
+	btn_numbering.id.style.fontSize = "14px";
+	btn_numbering.id.style.fontWeight = "bold";
+	btn_numbering.id.style.color = '#000000';;
+	btn_numbering.id.style.borderWidth = "2px";
+	btn_numbering.id.style.borderColor = '#0000ff';   //"red";
+	btn_numbering.name.addEventListener("click", function (){document.location.href = 'Pyramid_text.html';});		
+	
+	// Вывод на холст вспомогательной информации.
+	print_text_2d_3d();
+	
+	// Вывод на экран картинки с изображением короны огранки.
+	crown_image = new Image();
+	crown_image.width = 300;
+	crown_image.height = 300;
+	crown_image.style = "position: absolute; left: 1000px; top: 10px;";
+	crown_image.src = "pyramid_crown.png";
+	crown_image.style.opacity = "0.8";
+	
+	crown_image.onload = function() 
+	{
+		document.body.appendChild(crown_image);
+	}
+	
+	// Вывод на экран картинки с изображением павильона огранки.
+	pavilion_image = new Image();
+	pavilion_image.width = 270;
+	pavilion_image.height = 270;
+	pavilion_image.style = "position: absolute; left: 1020px; top: 320px;";
+	pavilion_image.src = "pyramid_pavilion.png";
+	pavilion_image.style.opacity = "0.8";
+	
+	pavilion_image.onload = function() 
+	{
+		document.body.appendChild(pavilion_image);
+	}	
+	
+	// Вывод на экран картинки с изображением всей огранки
+	// в виде проволочной модели.
+	// При клике мышкой на этой картинке будет запускаться программа отображения
+	// пирамиды на которой будут присутствовать индексы вершин модели.
+	pyramid_image = new Image();
+	pyramid_image.width = 300;
+	pyramid_image.height = 250;
+	pyramid_image.style = "position: absolute; left: 10px; top: 330px;";
+	pyramid_image.src = "pyramid.png";
+	pyramid_image.style.opacity = "0.8";
+	pyramid_image.style.borderRadius = "5%";
+	
+	pyramid_image.onload = function() 
+	{
+		document.body.appendChild(pyramid_image);
+	}	
+	
+	pyramid_image.addEventListener('mouseover', function (e) 
+	{	
+		pyramid_image.style.cursor = "pointer";
+	});
+	
+	pyramid_image.addEventListener('mouseout', function (e) 
+	{	
+		pyramid_image.style.cursor = "default";
+	});
+	
+	pyramid_image.addEventListener('click', function (e) 
+	{
+		document.location.href = 'Pyramid_text.html';
+	});
+	
+	// Создаем материал при помощи которого будут прорисовываться ребра 3D модели.
+	material_line = new THREE.LineBasicMaterial({ color: 0x000000 });
+	
+	//           Создание мешей двух типов
+	// 1. Для прорисовки цветных граней используется массив all_plgs.
+	//    Каждая грань представлена одним мешем в массиве полигонов.
+	// 2. Для прорисовки ребер граней используется массив all_lines.
+	//    Каждый полигон представлен одним массивом, окаймляющих его ребер, 
+	//    в общем массиве ребер всей модели.	
+	create_meshes();
+	
+	// Вывод на сцену массива полигонов.
+	for(var i = 0; i < all_plgs.length; i++) 
+	{
+		scene.add(all_plgs[i]);	
+	}
+	
+	// Вывод на сцену общего массива ребер.
+	for(var i = 0; i < all_lines.length; i++) 
+	{
+		scene.add(all_lines[i]);	
+	}
+
+	// Отображение на экран.
+	render();
+}	
+
+function create_meshes()
+{
+	// Предварительная очистка массивов.
+	vertices.length = 0;
+	plgs.length = 0;
+	faces.length = 0;
+	colors.length = 0;
+	all_lines.length = 0;
+	all_plgs.length = 0;
+	points.length = 0;
+		
+	// Расчет координат вершин 3D модели.
+    VerticesCalculation();
+	// Создание топологии 3D модели с учетом координат вершин и их взаимосвязи.
+	CreatePolyhedron();
+	// Вывод на холст значений параметров.
+	pars_value();
+	
+	// Facets
+	var i, j;
+	var el = 0;
+
+	// Каждые три последовательные значения, 
+	// соответствующие одной вершшине модели (массив vertices)  
+	// переводим в координаты x, y, z вершины модели с типом THREE.Vector3.
+	for (i = 0; i < vertices.length/3; i++)
+	{
+		var point3 = new THREE.Vector3();
+		for (j = 0; j < 3; j++)
+		{
+			point3.x = kf * vertices[el];
+			point3.y = kf * vertices[el + 1];
+			point3.z = kf * vertices[el + 2];
+		}
+		points.push(point3);
+		el = el + 3;
+	}
+
+	// Задаем цвет каждой грани.
+	facet_colors();
+	
+	// Meshes (полигоны)
+	
+	// Для каждой грани создаем отдельный меш.
+	//   Это сделано по двум причинам:
+	// Во-первых отдельные меши граней легче раскрасить,
+	// чем раскрашивать отдельные грани модели, если они входят
+	// как части в единую модель огранки.
+	// Во-вторых, если мы при помощи "raycaster" будем
+	// выбирать отдельные грани (в данной программе это не реализовано,
+	// но это присутствует в остальных моделях: Octagon, Brilliant ...)
+	// то опять же "raycaster" удобнее использовать для модели 
+	// представляющей собой не единую модель, а модель составленную
+	// из отдельных моделей граней.
+	// В том случае если для отображения исползуются шейдеры, то наоборот
+	// удобнее использовать единую модель, а не модель состоящую
+	// из отдельных граней. Это продемонстрировано в моделях Octagon, Brilliant,
+	// MoonMarquise, ... в режимах работы этих программ, где применяются шейдеры.
+	
+	for (i = 0; i < plgs.length; i++) // цикл по всем граням
+	{
+		var geometry = new THREE.Geometry();
+		geometry.vertices = points;
+		var plg = plgs[i]; 
+		var trgs = plg.IndexTriangle;
+		for (var j = 0; j < trgs.length; j++)
+		{
+			trgs[j].color = colors[i];
+		}
+		geometry.faces = trgs;
+		var material = new THREE.MeshBasicMaterial( { vertexColors: THREE.FaceColors } );
+		var mesh = new THREE.Mesh(geometry, material);	
+		mesh.index = i;
+		all_plgs.push(mesh);	
+	}	
+	
+	// Lines (ребра)
+	
+	// После того, как нарисовали 3D модель огранки и раскрасили цвета ее граней, 
+	// для лучшего зрительного восприятия модели желательно прорисовать все ее видимые ребра.
+	// С этой целью создается проволочный экземпляр 3D модели и накладывается на модель
+	// с раскрашенными гранями. Проволочный экземпляр 3D модели должен быть на очень 
+	// небольшую величину брльше по размеру, чем модель с гранями. В этом случае
+	// задние части проволочной модели будут закрыты моделью с гранями, а передние
+	// ее части окажутся видимыми. Тем самым наблюдатель будет воспринимать пирамиду
+	// как единую 3D модель с прорисованными ребрами.
+	
+	// Для каждой грани создаем отдельный массив ребер которые окаймляют эту грань.	
+	for (i = 0; i < plgs.length; i++) // цикл по всем граням модели
+	{
+		var geometry_line = new THREE.Geometry();
+		var points_line = [];
+		var facet = plgs[i].VertexFacet;
+			
+		for (j = 0; j < facet.vertexes.length; j++) // цикл по вершинам текущей грани
+		{
+			var vert = facet.vertexes[j];
+			var point3 = new THREE.Vector3(kf_lines * vert[0], kf_lines * vert[1], kf_lines * vert[2]);
+			points_line.push(point3);
+		}
+		geometry_line.vertices = points_line;
+		var mesh_line = new THREE.Line(geometry_line, material_line);
+		all_lines.push(mesh_line);
+	}	
+}			
+
+// коструктор кнопок
+function Btn(name, type, left, top )
+{
+	this.name = name;
+	this.name = document.createElement('input');
+	this.name.type = type;   //'button';
+	this.name.value = name;
+	this.id = document.body.appendChild(this.name);
+	this.id.style = "position: absolute";
+	this.id.style.background='#aaaaaa';
+	this.id.style.top = top;
+	this.id.style.left = left;
+	this.id.style.width = "30px";
+	this.id.style.opacity = "0.8";
+	this.id.className = "b1";
+	this.id.style.cursor = "pointer";
+}
+
+function Add_Param_Buttons()
+{
+	btn_lw_minus = new Btn("<",  "button", "170px", "95px" );
+	btn_lw_plus = new Btn(">", "button", "200px", "95px" );				
+	btn_lw_minus.name.addEventListener("click", lw_minus);
+	btn_lw_plus.name.addEventListener("click", lw_plus);
+
+	btn_r_minus = new Btn("<", "button", "170px", "120px" );
+	btn_r_plus = new Btn(">", "button", "200px", "120px" );
+	btn_r_minus.name.addEventListener("click", r_minus);
+	btn_r_plus.name.addEventListener("click", r_plus);	
+
+	btn_angleA_minus = new Btn("<", "button", "170px", "145px" );
+	btn_angleA_plus = new Btn(">", "button", "200px", "145px" );
+	btn_angleA_minus.name.addEventListener("click", angleA_minus);
+	btn_angleA_plus.name.addEventListener("click", angleA_plus);
+
+	btn_angleB_minus = new Btn("<", "button", "170px", "170px" );
+	btn_angleB_plus = new Btn(">", "button", "200px", "170px" );
+	btn_angleB_minus.name.addEventListener("click", angleB_minus);
+	btn_angleB_plus.name.addEventListener("click", angleB_plus);	
+	
+	btn_hCrown_minus = new Btn("<", "button", "170px", "195px" );
+	btn_hCrown_plus = new Btn(">", "button", "200px", "195px" );
+	btn_hCrown_minus.name.addEventListener("click", hCrown_minus);
+	btn_hCrown_plus.name.addEventListener("click", hCrown_plus);		
+	
+	btn_anglePav_minus = new Btn("<", "button", "170px", "220px" );
+	btn_anglePav_plus = new Btn(">", "button", "200px", "220px" );
+	btn_anglePav_minus.name.addEventListener("click", anglePav_minus);
+	btn_anglePav_plus.name.addEventListener("click", anglePav_plus);	
+}
+	
+function pars_value()
+{
+	var text_color = "#00F";
+	var value_color = "#F00";
+	
+	// Text before buttons
+	ctx.font = "12pt Arial";
+	var text = "Model parameters";
+	ctx.fillStyle = "#000";
+	ctx.fillText(text, 50, 87);		
+	
+	ctx.font = "italic 10pt Arial";
+	var text = "Girdle ratio ";
+	ctx.fillStyle = text_color;
+	ctx.fillText(text, 5, 110);		
+	text = roundNumber(lw, 2);
+	ctx.fillStyle = value_color;
+	ctx.fillText(text, 120, 110);	
+		
+	text = "Girdle thickness ";
+	ctx.fillStyle = text_color;
+	ctx.fillText(text, 5, 135);
+	text = roundNumber(r*100, 3) + "%";
+	ctx.fillStyle = value_color;
+	ctx.fillText(text, 120, 135);	
+	
+	text = "Crown angle A ";
+	ctx.fillStyle = text_color;
+	ctx.fillText(text, 5, 160);	
+	text = roundNumber(Math.degrees(angleA), 3) + "°";
+	ctx.fillStyle = value_color;
+	ctx.fillText(text, 120, 160);
+
+	text = "Crown angle B ";
+	ctx.fillStyle = text_color;
+	ctx.fillText(text, 5, 185);	
+	text = roundNumber(Math.degrees(angleB), 3) + "°";
+	ctx.fillStyle = value_color;
+	ctx.fillText(text, 120, 185);	
+	
+	text = "Crown height ";
+	ctx.fillStyle = text_color;
+	ctx.fillText(text, 5, 210);
+	text = roundNumber(hCrown*100, 3) + "%";
+	ctx.fillStyle = value_color;
+	ctx.fillText(text, 120, 210);	
+	
+	text = "Pavilion angle ";
+	ctx.fillStyle = text_color;
+	ctx.fillText(text, 5, 235);	
+	text = roundNumber(Math.degrees(anglePav), 3) + "°";
+	ctx.fillStyle = value_color;
+	ctx.fillText(text, 120, 235);
+	
+	text = "Perspective/Orthographic camera ";
+	ctx.fillStyle = text_color;
+	ctx.fillText(text, 5, 270);	
+}	
+	
+// Обработчики нажатий кнопок изменяющих значения параметров.
+function lw_minus() 
+{ 
+	lw = lw - 0.05; 
+	recalc(); // Так как параметр изменился то перестраиваем 3D модель.
+	if ( (isCorrect() == -1) || (lw < 0.2) )
+	{
+		lw = lw + 0.05; // Если  модель при изменении параметра стала некорректной
+		recalc();       // то параметр возвращаем к исходному значению ивосстанавливаем
+	}                   // форму модели перед последним изменением параметра
+}
+
+function lw_plus() 
+{ 
+	lw = lw + 0.05; 
+	recalc(); 
+	if ( (isCorrect() == -1) || (lw > 2.0) )
+	{
+		lw = lw - 0.05;
+		recalc();
+	}
+}
+
+function r_minus() 
+{ 
+	r = r - 0.01; 
+	recalc();
+	if (isCorrect() == -1) 
+	{
+		r = r + 0.01;
+		recalc();
+	}
+}
+
+function r_plus() 
+{ 
+	r = r + 0.01; 
+	recalc();
+	if (isCorrect() == -1)
+	{
+		r = r - 0.01;
+		recalc();
+	}
+}
+
+function angleA_minus()	
+{ 
+	angleA = angleA - DEGREE; 
+	recalc(); 
+	if (isCorrect() == -1)
+	{
+		angleA = angleA + DEGREE;
+		recalc();
+	}
+}
+
+function angleA_plus()	
+{ 
+	angleA = angleA + DEGREE; 
+	recalc(); 
+	if (isCorrect() == -1)
+	{
+		angleA = angleA - DEGREE;
+		recalc();
+	}
+}
+
+function angleB_minus()	
+{ 
+	angleB = angleB - DEGREE; 
+	recalc(); 
+	if (isCorrect() == -1)
+	{
+		angleB = angleB + DEGREE;
+		recalc();
+	}
+}
+
+function angleB_plus()	
+{ 
+	angleB = angleB + DEGREE; 
+	recalc(); 
+	if (isCorrect() == -1)
+	{
+		angleB = angleB - DEGREE;
+		recalc();
+	}
+}
+	
+function anglePav_minus()	
+{ 
+	anglePav = anglePav - DEGREE; 
+	recalc(); 
+	if (isCorrect() == -1)
+	{
+		anglePav = anglePav + DEGREE;
+		recalc();
+	}
+}
+
+function anglePav_plus()	
+{ 
+	anglePav = anglePav + DEGREE; 
+	recalc(); 
+	if (isCorrect() == -1)
+	{
+		anglePav = anglePav - DEGREE;
+		recalc();
+	}
+}
+
+function hCrown_minus() 
+{ 
+	hCrown = hCrown - 0.01; 
+	recalc();
+	if (isCorrect() == -1) 
+	{
+		hCrown = hCrown + 0.01;
+		recalc();
+	}
+}
+
+function hCrown_plus() 
+{ 
+	hCrown = hCrown + 0.01; 
+	recalc();
+	if (isCorrect() == -1)
+	{
+		hCrown = hCrown - 0.01;
+		recalc();
+	}
+}
+
+// Функция проверки того правильно ли построена модель огранки.
+// В данном случае это проверка того является ли построенная 3D модель выпуклой.
+function isCorrect()
+{
+	var i, j;
+	// Проходим по всем граням модели 
+	for (i = 0; i < plgs.length; i++)
+	{
+		var plg = plgs[i]; 
+		var face3 = plg.IndexTriangle[0];
+
+		var ind1 = face3.a;
+		var ind2 = face3.b;
+		var ind3 = face3.c;
+		
+		var pt1 = new Point3D(points[ind1].x, points[ind1].y, points[ind1].z);
+		var pt2 = new Point3D(points[ind2].x, points[ind2].y, points[ind2].z);
+		var pt3 = new Point3D(points[ind3].x, points[ind3].y, points[ind3].z);
+
+		var plane = new Plane3D();
+		plane.CreatePlaneThreePoints(pt1, pt2, pt3);
+		
+		// Проходим по всем вершинам модели 
+		for (j = 0; j < points.length; j++)
+		{
+			var pt_test = new Point3D(points[j].x, points[j].y, points[j].z);
+			var dist = plane.DistancePoint(pt_test);
+			if (dist > 0.000001)
+			{
+				// невыпуклая модель
+				return -1;
+			}
+		}
+	}
+}
+	
+// Если значение какого-либо параметра изменилось то перестраиваем 3D модель.
+function recalc()
+{
+	var i;
+	
+	// Убираем со сцены полигоны.
+	for(i = 0; i < all_plgs.length; i++) 
+	{
+		var mesh = all_plgs[i];
+		scene.remove(mesh);	
+	}
+	// Убираем со сцены ребра.
+	for(i = 0; i < all_lines.length; i++) 
+	{
+		scene.remove(all_lines[i]);	
+	}				
+	
+	// Создаем новые полигоны и ребра и выводим их на сцену.
+	create_meshes();
+	for(i = 0; i < all_lines.length; i++) 
+	{
+		scene.add(all_lines[i]);	
+	}	
+	for(i = 0; i < all_plgs.length; i++) 
+	{
+		scene.add(all_plgs[i]);	
+	}
+
+	// Очищаем холст и затем выводим на него новые значения параметров,
+	// а также дополнительную информацию.
+	ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+	pars_value();
+	print_text_2d_3d();
+}
+
+// Вспомогательная функция форматирования числовых значений.
+function roundNumber(num, places) 
+{
+	return ( Math.round(num * Math.pow(10, places)) / Math.pow(10, places) );
+}
+
+// Дополнительная информация на холсте.
+function print_text_2d_3d()
+{
+	ctx.font = '30px "Times New Roman"';
+	ctx.fillStyle = 'rgba(0, 0, 255, 1)'
+	//ctx.fillText('Pyramid', window.innerWidth/2 - window.innerWidth/6, 60);
+	ctx.fillText('Pyramid', window.innerWidth/2 - window.innerWidth/10, 60);
+
+	ctx.font = '20px "Times New Roman"';
+	ctx.fillStyle = 'rgba(100, 100, 255, 1)'
+	ctx.fillText('Crown - 4 facets + Table, Girdle - 4 facets, Pavilion - 4 facets', 
+							window.innerWidth/2 - window.innerWidth/4, 85);
+	ctx.font = '14px "Times New Roman"';
+	ctx.fillStyle = 'rgba(255, 0, 255, 1)';	
+	ctx.fillText("Spin the Cut by dragging it with mouse", window.innerWidth/2 - window.innerWidth/7, 115);	
+}
+	
+function camera_change() 
+{ 
+	if (btn_camera.name.checked == true)
+	{
+	}	
+	else
+	{
+	}	
+}
+
+function render() 
+{
+	if (btn_camera.name.checked == true)
+	{
+		var delta = clock.getDelta();
+		orbitControls_persp.update(delta);
+		requestAnimationFrame(render);
+		renderer.render(scene, camera_persp);
+	}
+	else
+	{
+		var delta = clock.getDelta();
+		orbitControls_ortho.update(delta);
+		requestAnimationFrame(render);
+		renderer.render(scene, camera_ortho);	
+	}
+}
+
+window.onload = draw;
+</script>
+</body>
+</html>
